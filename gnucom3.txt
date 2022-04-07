@@ -1,5 +1,5 @@
-set xr[-15:15]
-set yr[-15:15]
+set xr[-120:120]
+set yr[-120:120]
 set cbr[-0.1:0.1]
 set palette defined (-0.1 "blue", 0 "black", 0.1 "red")
 set size square
@@ -11,6 +11,6 @@ list = system('ls out')
 do for [file in list]{
 	set output sprintf('png/%.5s.png',file)
 	plot sprintf('out/%s',file) binary format='%double%int%double%double%double%double%double%double%double%double' \
-	u 5:6:3:4 w circles lc palette notitle
+	u 5:6:4 ps 1 lc palette pt 7 notitle
 	set label 1 at screen 0.9,0.9 sprintf('%.5s',file)
 }
