@@ -1,186 +1,152 @@
 #include <Particle.h>
-Particle::Particle(
-	int id,
-	double mass, 
-	double charge, 
-	std::array<double,6> position,
-	std::array<double,6> momentum
-){
-	this->step = 1;
-	this->pair = -1;
-	this->force = {0,0,0,0,0,0};
-	this->yank = {0,0,0,0,0,0};
-	this->set(id,mass,charge,position,momentum);
-}
+#include <Constants.h>
+#include <iomanip>
+#include <random>
 
-void Particle::set(
-	int id,
-	double mass,
-	double charge,
-	std::array<double,6> position,
-	std::array<double,6> momentum
-){
-	this->id = id;
-	this->mass = mass;
-	this->charge = charge;
-	this->position = position;
-	this->momentum = momentum;
-}
-
-double Particle::interact(Particle& p){
-	double x = position[0] - p.position[0];
-	double y = position[1] - p.position[1];
-	double px = momentum[0] - p.momentum[0];
-	double py = momentum[1] - p.momentum[1];
-	double r = sqrt(x*x+y*y+epsilon);
-		double r3 = r*r*r;
-		double r5 = r3*r*r;
-		force[0] += x*((charge)*(p.charge))/r3;
-		force[1] += y*((charge)*(p.charge))/r3;
-		yank[0] += px*((charge)*(p.charge))/r3;
-		yank[0] -= 3*(px*x+py*y)*x*((charge)*(p.charge))/r5;
-		yank[1] += py*((charge)*(p.charge))/r3;
-		yank[1] -= 3*(px*x+py*y)*y*((charge)*(p.charge))/r5;
-		return (charge)*(p.charge)/abs(r);
-}
-
-void Particle::evaluate(Particle& p){
-	double x = position[3] - p.position[3];
-	double y = position[4] - p.position[4];
-	double px = momentum[3] - p.momentum[3];
-	double py = momentum[4] - p.momentum[4];
-	double r = sqrt(x*x+y*y+epsilon);
+void Particle::evaluate(Particle& particle, int k){
+	double x = X[k] - particle.X[k];
+	double y = Y[k] - particle.Y[k];
+	double px = PX[k] - particle.PX[k];
+	double py = PY[k] - particle.PY[k];
+	double r = sqrt(x*x+y*y+EPSILON);
 	double r3 = r*r*r;
 	double r5 = r3*r*r;
-	force[3] += x*((charge)*(p.charge))/r3;
-	force[4] += y*((charge)*(p.charge))/r3;
-	yank[3] += px*((charge)*(p.charge))/r3;
-	yank[3] -= 3*(px*x+py*y)*x*((charge)*(p.charge))/r5;
-	yank[4] += py*((charge)*(p.charge))/r3;
-	yank[4] -= 3*(px*x+py*y)*y*((charge)*(p.charge))/r5;
+	double cc = charge * particle.charge;
+	FX[k] += x*cc/r3;
+	FY[k] += y*cc/r3;
+	/*
+	YX[k] += px*cc/r3;
+	YX[k] -= 3*(px*x+py*y)*x*cc/r5;
+	YY[k] += py*cc/r3;
+	YY[k] -= 3*(px*x+py*y)*y*cc/r5;
+	*/
 }
 
+void Particle::evaluate2(Particle& particle, int k){
+	double x = X[k] - particle.X[k];
+	double y = Y[k] - particle.Y[k];
+	double px = PX[k] - particle.PX[k];
+	double py = PY[k] - particle.PY[k];
+	double r = sqrt(x*x+y*y+EPSILON);
+	double r3 = r*r*r;
+	double r5 = r3*r*r;
+	double cc = charge * particle.charge;
+	FX[k] += x*cc/r3;
+	FY[k] += y*cc/r3;
+	
+	YX[k] += px*cc/r3;
+	YX[k] -= 3*(px*x+py*y)*x*cc/r5;
+	YY[k] += py*cc/r3;
+	YY[k] -= 3*(px*x+py*y)*y*cc/r5;
+}
+
+/*taylor expansion*/
+/*1/2,1*/
+/*1/6,1/2,1*/
 void Particle::predict(double dt){
-	momentum[3] = 0.5*dt*dt*yank[0] + dt*force[0] + momentum[0];
-	momentum[4] = 0.5*dt*dt*yank[1] + dt*force[1] + momentum[1];
-	position[3] = (0.16666667*dt*dt*dt*yank[0] + 0.5*dt*dt*force[0] 
-					+ dt*momentum[0]) / mass + position[0];
-	position[4] = (0.16666667*dt*dt*dt*yank[1] + 0.5*dt*dt*force[1] 
-					+ dt*momentum[1]) / mass + position[1];
+	PX[1] = 0.5*dt*dt*YX[0] + dt*FX[0] + PX[0];
+	PY[1] = 0.5*dt*dt*YY[0] + dt*FY[0] + PY[0];
+	X[1] = (0.16666667*dt*dt*dt*YX[0] + 0.5*dt*dt*FX[0] + dt*PX[0]) / mass + X[0];
+	Y[1] = (0.16666667*dt*dt*dt*YY[0] + 0.5*dt*dt*FY[0] + dt*PY[0]) / mass + Y[0];
 }
 
+/*1/2,-1/12*/
+/*1/2,-1/12*/
 void Particle::correct(double dt){
-	momentum[3] = momentum[0] + 0.5*dt*(force[3]+force[0])
-						- 0.083333333*dt*dt*(yank[3]-yank[0]);
-	momentum[4] = momentum[1] + 0.5*dt*(force[4]+force[1])
-						- 0.083333333*dt*dt*(yank[4]-yank[1]);
-	position[3] = position[0] + (
-							0.5*dt*(momentum[3]+momentum[0]) -
-							0.083333333*dt*dt*(force[3]-force[0])
-						)/mass;
-	position[4] = position[1] + (
-							0.5*dt*(momentum[4]+momentum[1]) -
-							0.083333333*dt*dt*(force[4]-force[1])
-						)/mass;
+	PX[1] = PX[0] + 0.5*dt*(FX[1]+FX[0])- 0.083333333*dt*dt*(YX[1]-YX[0]);
+	PY[1] = PY[0] + 0.5*dt*(FY[1]+FY[0])- 0.083333333*dt*dt*(YY[1]-YY[0]);
+	X[1] = X[0] + (0.5*dt*(PX[1]+PX[0]) -0.083333333*dt*dt*(FX[1]-FX[0]))/mass;
+	Y[1] = Y[0] + (0.5*dt*(PY[1]+PY[0]) -0.083333333*dt*dt*(FY[1]-FY[0]))/mass;
 }
 
-void Particle::push(){
-	momentum[0] = momentum[3];
-	momentum[1] = momentum[4];
-	position[0] = position[3];
-	position[1] = position[4];
+void Particle::move(int i, int j){
+	PX[j] = PX[i];
+	PY[j] = PY[i];
+	X[j] = X[i];
+	Y[j] = Y[i];
 }
 
-double Particle::error(){
-	return (force[3] - force[0])*(force[3] - force[0]) + 
-	(force[4] - force[1])*(force[4] - force[1]);
+double Particle::error(int i, int j){
+	return (PX[i] - PX[j])*(PX[i] - PX[j]) + (PY[i] - PY[j])*(PY[i] - PY[j]);
+}
+
+void Particle::reflect(double range[][2]){
+	if(X[0] > range[0][1]){X[0] -= 2*(X[0]-range[0][1]); PX[0] *= -1;}
+	if(X[0] < range[0][0]){X[0] += 2*(range[0][0]-X[0]); PX[0] *= -1;}
+	if(Y[0] > range[1][1]){Y[0] -= 2*(Y[0]-range[1][1]); PY[0] *= -1;}
+	if(Y[0] < range[1][0]){Y[0] += 2*(range[1][0]-Y[0]); PY[0] *= -1;}
+}
+void Particle::periodic(double range[][2]){
+	if(X[0] > range[0][1]){X[0] -= range[0][1] - range[0][0];}
+	if(X[0] < range[0][0]){X[0] += range[0][1] - range[0][0];}
+	if(Y[0] > range[1][1]){Y[0] -= range[1][1] - range[1][0];}
+	if(Y[0] < range[1][0]){Y[0] += range[1][1] - range[1][0];}
+}
+
+void Particle::header(std::ostream &out){
+	out << std::setw(6) << "id"
+	<< std::setw(6) << "step"
+	<< std::setw(10) << "mass" 
+	<< std::setw(10) << "charge"
+	<< std::setw(10) << "x"
+	<< std::setw(10) << "y"
+	<< std::setw(10) << "px"
+	<< std::setw(10) << "py"
+	<< std::setw(10) << "fx"
+	<< std::setw(10) << "fy" << "\n";
 }
 
 void Particle::print(std::ostream &out){
-	out << id << "\t"
-	<< step << "\t"
-	<< mass << "\t"
-	<< charge << "\t"
-	<< position[0] << "\t"
-	<< position[1] << "\t"
-	<< momentum[0] << "\t"
-	<< momentum[1] << "\t"
-	<< force[0] << "\t"
-	<< force[1] << "\t\n";
+	out << std::setw(6) << id
+	<< std::setw(6)  << step
+	<< std::setw(10) << std::scientific << std::setprecision(2) << mass
+	<< std::setw(10) << std::scientific << std::setprecision(2) << charge 
+	<< std::setw(10) << std::scientific << std::setprecision(2) << X[0]
+	<< std::setw(10) << std::scientific << std::setprecision(2) << Y[0]
+	<< std::setw(10) << std::scientific << std::setprecision(2) << PX[0]
+	<< std::setw(10) << std::scientific << std::setprecision(2) << PY[0]
+	<< std::setw(10) << std::scientific << std::setprecision(2) << FX[0]
+	<< std::setw(10) << std::scientific << std::setprecision(2) << FY[0] << "\n";
 }
 
-void Particle::serialize(std::vector<Particle> &array, int length, char **data, size_t *size){
-	*size = 0;
-	*size += sizeof(int); // id
-	*size += sizeof(double); // mass
-	*size += sizeof(double); // charge
-	*size += 2*sizeof(double); // position
-	*size += 2*sizeof(double); // momentum
-	*size += 2*sizeof(double); // force
-	*size *= length;
-	char *head = *data = (char*)malloc(*size);
-	for(int i=0;i<length;i++){
+void Particle::write(std::ofstream &ofs){
+	ofs.write((char*)&id,sizeof(int));
+	ofs.write((char*)&mass,sizeof(double));
+	ofs.write((char*)&charge,sizeof(double));
+	ofs.write((char*)&X[0],sizeof(double));
+	ofs.write((char*)&Y[0],sizeof(double));
+	ofs.write((char*)&PX[0],sizeof(double));
+	ofs.write((char*)&PY[0],sizeof(double));
+	ofs.write((char*)&FX[0],sizeof(double));
+	ofs.write((char*)&FY[0],sizeof(double));
+}
+
+void Particle::pack(std::vector<Particle> &array, int length, int offset, char *data){
+	char *head = data;
+	for(int i=offset;i<offset+length;i++){
 		memcpy(head,&(array[i].id),sizeof(int)); head += sizeof(int);
 		memcpy(head,&(array[i].mass),sizeof(double)); head += sizeof(double);
 		memcpy(head,&(array[i].charge),sizeof(double)); head += sizeof(double);
-		memcpy(head,&(array[i].position[0]),sizeof(double)); head += sizeof(double);
-		memcpy(head,&(array[i].position[1]),sizeof(double)); head += sizeof(double);
-		memcpy(head,&(array[i].momentum[0]),sizeof(double)); head += sizeof(double);
-		memcpy(head,&(array[i].momentum[1]),sizeof(double)); head += sizeof(double);
-		memcpy(head,&(array[i].force[0]),sizeof(double)); head += sizeof(double);
-		memcpy(head,&(array[i].force[1]),sizeof(double)); head += sizeof(double);
+		memcpy(head,&(array[i].X[0]),sizeof(double)); head += sizeof(double);
+		memcpy(head,&(array[i].Y[0]),sizeof(double)); head += sizeof(double);
+		memcpy(head,&(array[i].PX[0]),sizeof(double)); head += sizeof(double);
+		memcpy(head,&(array[i].PY[0]),sizeof(double)); head += sizeof(double);
+		memcpy(head,&(array[i].FX[0]),sizeof(double)); head += sizeof(double);
+		memcpy(head,&(array[i].FY[0]),sizeof(double)); head += sizeof(double);
 	}
-}
-std::vector<Particle> Particle::deserialize(char *data, size_t size){
-	size_t s = 0;
-	s += sizeof(int); // id
-	s += sizeof(double); // mass
-	s += sizeof(double); // charge
-	s += 2*sizeof(double); // position
-	s += 2*sizeof(double); // momentum
-	s += 2*sizeof(double); // force
-	std::vector<Particle> array(size/s);
-	char *head = data;
-	for(int i=0;i<array.size();i++){
-		std::memcpy(&(array[i].id),head,sizeof(int)); head += sizeof(int);
-		std::memcpy(&(array[i].mass),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].charge),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].position[0]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].position[1]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].momentum[0]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].momentum[1]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].force[0]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].force[1]),head,sizeof(double)); head += sizeof(double);
-	}
-	free(data);
-	return array;
 }
 
-void Particle::deserialize_fill(std::vector<Particle> &array, int *index, char *data, size_t size){
-	size_t s = 0;
-	s += sizeof(int); // id
-	s += sizeof(double); // mass
-	s += sizeof(double); // charge
-	s += 2*sizeof(double); // position
-	s += 2*sizeof(double); // momentum
-	s += 2*sizeof(double); // force
+void Particle::unpack(std::vector<Particle> &array, int length, int offset, char *data){
 	char *head = data;
-	//std::cout << "deserialize_fill : start : " << *index << std::endl;
-	//std::cout << "deserialize_fill : end : " << *index + size/s << std::endl;
-	for(int i=*index;i<*index+size/s;i++){
-		//array[i].print();
-		std::memcpy(&(array[i].id),head,sizeof(int)); head += sizeof(int);
-		std::memcpy(&(array[i].mass),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].charge),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].position[0]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].position[1]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].momentum[0]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].momentum[1]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].force[0]),head,sizeof(double)); head += sizeof(double);
-		std::memcpy(&(array[i].force[1]),head,sizeof(double)); head += sizeof(double);
-		//array[i].print();
-		//std::cout << "===\n";
+	for(int i=offset;i<offset+length;i++){
+		memcpy(&(array[i].id),head,sizeof(int)); head += sizeof(int);
+		memcpy(&(array[i].mass),head,sizeof(double)); head += sizeof(double);
+		memcpy(&(array[i].charge),head,sizeof(double)); head += sizeof(double);
+		memcpy(&(array[i].X[0]),head,sizeof(double)); head += sizeof(double);
+		memcpy(&(array[i].Y[0]),head,sizeof(double)); head += sizeof(double);
+		memcpy(&(array[i].PX[0]),head,sizeof(double)); head += sizeof(double);
+		memcpy(&(array[i].PY[0]),head,sizeof(double)); head += sizeof(double);
+		memcpy(&(array[i].FX[0]),head,sizeof(double)); head += sizeof(double);
+		memcpy(&(array[i].FY[0]),head,sizeof(double)); head += sizeof(double);
 	}
-	*index += size/s;
-	free(data);
 }
